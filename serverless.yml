@@ -1,0 +1,84 @@
+org: narantsatsralt05
+app: serverless-graphql-todo-endpoints
+service: serverless-graphql-template
+useDotenv: true,
+frameworkVersion: "3"
+plugins:
+  - serverless-offline
+  - serverless-dynamodb-local
+  - serverless-webpack
+  - webpack-node-externals
+  - serverless-dotenv-plugin
+
+package:
+  individually: true
+resources: # CloudFormation template syntax from here on.
+  Resources:
+    TodosDynamoDbTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: Retain
+      Properties:
+        TableName: todos
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 10
+          WriteCapacityUnits: 10
+custom:
+  webpack:
+    webpackConfig: ./webpack.config.js
+  dynamodb:
+    # If you only want to use DynamoDB Local in some stages, declare them here
+    stages:
+      - local
+      - development
+      - staging
+      - production
+    start:
+      port: 8000
+      inMemory: true
+      heapInitial: 200m
+      heapMax: 1g
+      migrate: true
+      seed: true
+      convertEmptyValues: true
+  defaultStage: local
+  secrets: ${file(./src/stages/env_${opt:stage, self:custom.defaultStage}.json)}
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  stage: ${opt:stage, 'local'}
+  region: ${opt:region, 'us-east-1'}
+  profile: ${self:custom.secrets.PROFILE}
+  apiGateway:
+    shouldStartNameWithService: true
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:*
+            - execute-api:*
+          Resource: "*"
+  environment:
+    REGION: ${self:custom.secrets.REGION},
+    STAGE: ${self:custom.secrets.STAGE},
+    PROFILE: ${self:custom.secrets.PROFILE},
+    ACCESS_KEY: ${self:custom.secrets.ACCESS_KEY},
+    KEY_ID: ${self:custom.secrets.KEY_ID},
+    DYNAMODB_HOST: ${self:custom.secrets.DYNAMODB_HOST}
+
+functions:
+  graphql:
+    # this is formatted as <FILENAME>.<HANDLER>
+    handler: handler.graphqlHandler
+    events:
+      - http:
+          path: /graphql
+          method: post
+          cors: true
